@@ -41,61 +41,14 @@ namespace {
     usPalette = pDraw->pPalette;
     y = pDraw->iY + pDraw->y; // current line
 
-    s = pDraw->pPixels;
     if (pDraw->ucDisposalMethod == 2) { // restore to background color
-      for (int x = 0; x < iWidth; x++) {
-        if (s[x] == pDraw->ucTransparent)
-          s[x] = pDraw->ucBackground;
-      }
-      pDraw->ucHasTransparency = 0;
+      virtualDisp->fillRect(off_x, off_y + y, gif.getCanvasWidth(), 1, usPalette[pDraw->ucBackground]);
     }
-    // Apply the new pixels to the main image
-    if (pDraw->ucHasTransparency) { // if transparency used
-      uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
-      int x, iCount;
-      pEnd = s + pDraw->iWidth;
-      x = 0;
-      iCount = 0; // count non-transparent pixels
-      while (x < pDraw->iWidth) {
-        c = ucTransparent - 1;
-        d = usTemp;
-        while (c != ucTransparent && s < pEnd) {
-          c = *s++;
-          if (c == ucTransparent) { // done, stop
-            s--; // back up to treat it like transparent
-          } else { // opaque
-            *d++ = usPalette[c];
-            iCount++;
-          }
-        }             // while looking for opaque pixels
-        if (iCount) { // any opaque pixels?
-          for (int xOffset = 0; xOffset < iCount; xOffset++) {
-            virtualDisp->drawPixel(off_x + x + xOffset + pDraw->iX, off_y + y, usTemp[xOffset]); // 565 Color Format
-          }
-          x += iCount;
-          iCount = 0;
-        }
-        // no, look for a run of transparent pixels
-        c = ucTransparent;
-        while (c == ucTransparent && s < pEnd) {
-          c = *s++;
-          if (c == ucTransparent)
-            iCount++;
-          else
-            s--;
-        }
-        if (iCount) {
-          x += iCount; // skip these
-          iCount = 0;
-        }
-      }
-    }
-    else { // does not have transparency
-      s = pDraw->pPixels;
-      // Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
-      for (int x = 0; x < pDraw->iWidth; x++) {
-        virtualDisp->drawPixel(off_x + x + pDraw->iX, off_y + y, usPalette[*s++]); // color 565
-      }
+    for (int x = 0; x < pDraw->iWidth; x++) {
+      uint16_t color = pDraw->pPixels[x];
+      // FIXME: we should also check something like if transparency is enabled
+      if (color != pDraw->ucTransparent)
+        virtualDisp->drawPixel(off_x + pDraw->iX + x, off_y + y, usPalette[color]); // 565 Color Format
     }
   }
 
@@ -167,7 +120,10 @@ namespace {
       // next frame
       t = millis();
       if (t < next_frame_millis) continue;
-      if (!gif.playFrame(false, &i)) {
+      int res = gif.playFrame(false, &i);
+      if (res != 1) {
+        int err = gif.getLastError();
+        Serial.printf("gif.playFrame: %d %d\n", res, err);
         gif.reset();
       }
       next_frame_millis = t + i;
